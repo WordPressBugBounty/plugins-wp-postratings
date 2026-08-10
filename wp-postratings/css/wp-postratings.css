@@ -1,0 +1,362 @@
+/**
+ * WP-PostRatings front end styles.
+ *
+ * The rating shapes are CSS masks, so the markup carries no images and the
+ * colour is whatever the theme sets. Everything worth changing is a custom
+ * property on .wp-postratings -- restyling needs no PHP and no plugin files.
+ *
+ *     .wp-postratings {
+ *         --wp-postratings-size: 24px;
+ *         --wp-postratings-color-on: #e5484d;
+ *     }
+ */
+
+/*
+ * There is no defaults block on purpose. Every custom property carries its
+ * default as a var() fallback at the point it is used, which is how wp-polls
+ * does it, and it means the values injected by the settings screen have
+ * nothing to compete with. Declaring defaults on .wp-postratings and injecting
+ * on :root -- the arrangement this replaced -- loses on specificity, so the
+ * chosen colour silently never applied.
+ */
+
+.wp-postratings {
+	display: inline-flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.5em;
+}
+
+/* The rating table's first column holds a preview, and .wp-postratings is
+   inline-flex with no padding of its own, so the glyphs sat flush against the
+   cell edge while every other column had the table's own padding. */
+.wp-postratings-rating-preview {
+	padding-inline-start: 8px;
+}
+
+/* The picker compares shapes, so the previews use the built-in colours whatever
+   the ratings below have been set to -- otherwise every row is the colour of
+   the current rating and the one thing being chosen is the one thing not shown.
+
+   Literals, not var( ..., fallback ): the strip carries the rating's colour as
+   an inline custom property, which would win over any fallback. These have to
+   stay equal to WP_PostRatings_Options::COLOR_RATED and COLOR_UNRATED, and
+   test_the_built_in_colours_match_the_stylesheet holds them there. */
+.wp-postratings-shape-preview .wp-postratings-track {
+	color: #d4d4d8;
+}
+
+.wp-postratings-shape-preview .wp-postratings-fill,
+.wp-postratings-shape-preview .wp-postratings-single {
+	color: #f5a623;
+}
+
+/* The shape picker on the settings screen: one shape per line.
+   No display of its own. A <p> is already block-level, so the rows separate
+   without help -- they only ever shared a line because .wp-postratings used to
+   be on the <p> itself, and that is inline-flex. Putting display:flex here
+   instead made every child a flex item, including the preview, which is its own
+   flex container and stopped drawing. The lesson twice over: leave the rating
+   wrapper's layout alone. */
+.wp-postratings-shape-row {
+	margin-block: 0.5em;
+}
+
+/* The parts of a picker row sit on the text baseline, so the preview needs
+   aligning to the radio and the label beside it. */
+.wp-postratings-shape-row .wp-postratings {
+	vertical-align: middle;
+	margin-inline: 0.5em;
+}
+
+/* --- the shape itself ---------------------------------------------------- */
+
+.wp-postratings-item {
+	display: block;
+	flex: none;
+	inline-size: var( --wp-postratings-size, 20px );
+	block-size: var( --wp-postratings-size, 20px );
+	background-color: currentColor;
+
+	/* -webkit- prefix kept: Safari only unprefixed mask-image in 17.4, and the
+	   plugin supports older iOS than that. */
+	-webkit-mask-image: var( --wp-postratings-shape );
+	mask-image: var( --wp-postratings-shape );
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+	-webkit-mask-position: center;
+	mask-position: center;
+	-webkit-mask-size: contain;
+	mask-size: contain;
+}
+
+/* --- read-only display --------------------------------------------------- */
+
+.wp-postratings-strip {
+	position: relative;
+	display: inline-flex;
+	vertical-align: middle;
+	line-height: 1;
+}
+
+.wp-postratings-row {
+	display: flex;
+	gap: var( --wp-postratings-gap, 2px );
+	inline-size: max-content;
+}
+
+.wp-postratings-track {
+	color: var( --wp-postratings-color-off, #d4d4d8 );
+}
+
+/* A lone glyph -- an up/down vote, or a settings screen preview -- sits in
+   normal flow and is always shown in the "on" colour. */
+.wp-postratings-single {
+	color: var( --wp-postratings-color-on, #f5a623 );
+}
+
+/* An up/down pair with no verdict yet: both glyphs, in the unrated colour. */
+.wp-postratings-undecided {
+	color: var( --wp-postratings-color-off, #d4d4d8 );
+}
+
+.wp-postratings-single.wp-postratings-shape-thumb,
+.wp-postratings-single.wp-postratings-shape-plusminus,
+.wp-postratings-single.wp-postratings-shape-tickcross,
+.wp-postratings-single.wp-postratings-shape-updown {
+	color: var( --wp-postratings-color-on, #f5a623 );
+}
+
+/*
+ * The filled layer sits over the track and is clipped to a percentage, so a
+ * 3.7 of 5 renders as 74% rather than being rounded to the nearest half image
+ * the way the pre-2.0.0 GIF sets had to be.
+ */
+.wp-postratings-fill {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-start: 0;
+	overflow: hidden;
+	color: var( --wp-postratings-color-on, #f5a623 );
+	inline-size: var( --wp-postratings-fill, 0% );
+}
+
+/* --- voting: a scale ----------------------------------------------------- */
+
+.wp-postratings-vote {
+	display: inline-flex;
+	align-items: center;
+	gap: var( --wp-postratings-gap, 2px );
+	border: 0;
+	padding: 0;
+	margin: 0;
+	min-inline-size: 0;
+}
+
+/* The scale is a span carrying role="radiogroup"; see the note in
+   WP_PostRatings_Template::scale_control() for why it is not a fieldset. */
+
+
+.wp-postratings-vote > legend {
+	position: absolute;
+	inline-size: 1px;
+	block-size: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.wp-postratings-vote input[type="radio"] {
+	position: absolute;
+	opacity: 0;
+	inline-size: 1px;
+	block-size: 1px;
+	margin: 0;
+	pointer-events: none;
+}
+
+.wp-postratings-vote label {
+	display: block;
+	cursor: pointer;
+	color: var( --wp-postratings-color-off, #d4d4d8 );
+	transition: color var( --wp-postratings-transition, 120ms ease-in-out );
+}
+
+.wp-postratings-vote label span {
+	position: absolute;
+	inline-size: 1px;
+	block-size: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/*
+ * Hovering or focusing one value fills it and everything before it. The row is
+ * laid out in reverse so a plain sibling combinator can reach backwards, which
+ * is what lets the whole hover behaviour be CSS rather than JavaScript
+ * swapping image sources on every mouseover.
+ */
+.wp-postratings-scale {
+	flex-direction: row-reverse;
+	justify-content: flex-end;
+}
+
+/*
+ * The score so far, painted into each shape rather than as one strip over the
+ * row. A strip has to guess the row's geometry, and it cannot: a theme putting
+ * padding on a label moves that label's glyph without moving anything the strip
+ * knows about, and the two grids drift apart. Each glyph carries its own share
+ * of the score instead, so alignment is not something the CSS has to get right.
+ *
+ * The gradient sits under the mask the shape is cut from, so a step filled 15%
+ * is 15% of that shape.
+ */
+.wp-postratings-scale label .wp-postratings-item {
+	background-image: linear-gradient(
+		to right,
+		var( --wp-postratings-color-on, #f5a623 ) var( --wp-postratings-step-fill, 0% ),
+		var( --wp-postratings-color-off, #d4d4d8 ) var( --wp-postratings-step-fill, 0% )
+	);
+}
+
+[dir="rtl"] .wp-postratings-scale label .wp-postratings-item {
+	background-image: linear-gradient(
+		to left,
+		var( --wp-postratings-color-on, #f5a623 ) var( --wp-postratings-step-fill, 0% ),
+		var( --wp-postratings-color-off, #d4d4d8 ) var( --wp-postratings-step-fill, 0% )
+	);
+}
+
+/* Interaction wins: hovering, focusing or having voted colours the labels, and
+   the score underneath would otherwise show through the choice being made. */
+.wp-postratings-scale:hover label .wp-postratings-item,
+.wp-postratings-scale:focus-within label .wp-postratings-item,
+.wp-postratings-scale:has( input:checked ) label .wp-postratings-item {
+	background-image: none;
+}
+
+.wp-postratings-scale label:hover,
+.wp-postratings-scale label:hover ~ label,
+.wp-postratings-scale input:focus-visible + label,
+.wp-postratings-scale input:focus-visible + label ~ label {
+	color: var( --wp-postratings-color-hover, var( --wp-postratings-color-on, #f5a623 ) );
+}
+
+.wp-postratings-scale input:checked + label,
+.wp-postratings-scale input:checked + label ~ label {
+	color: var( --wp-postratings-color-on, #f5a623 );
+}
+
+.wp-postratings-scale input:focus-visible + label {
+	outline: 2px solid currentColor;
+	outline-offset: 2px;
+}
+
+/* --- voting: up / down --------------------------------------------------- */
+
+/*
+ * Deliberately buttons rather than a radio group: this is a pair of opposing
+ * actions, not one value out of several, and announcing it as a scale would
+ * misrepresent it.
+ */
+.wp-postratings-updown button {
+	display: block;
+	border: 0;
+	padding: 0;
+	margin: 0;
+	background: none;
+	cursor: pointer;
+	color: var( --wp-postratings-color-off, #d4d4d8 );
+	transition: color var( --wp-postratings-transition, 120ms ease-in-out );
+}
+
+.wp-postratings-updown button:hover,
+.wp-postratings-updown button:focus-visible {
+	color: var( --wp-postratings-color-hover, var( --wp-postratings-color-on, #f5a623 ) );
+}
+
+.wp-postratings-updown button:focus-visible {
+	outline: 2px solid currentColor;
+	outline-offset: 2px;
+}
+
+/* A step's own rated colour wins over the built-in green and red, so an
+   up/down pair coloured in the settings shows those colours rather than these.
+   The built-ins stay as the fallback for a site that has set neither. */
+.wp-postratings-updown .wp-postratings-up:hover,
+.wp-postratings-updown .wp-postratings-up:focus-visible {
+	color: var( --wp-postratings-color-on, var( --wp-postratings-color-up, #2e9e4f ) );
+}
+
+.wp-postratings-updown .wp-postratings-down:hover,
+.wp-postratings-updown .wp-postratings-down:focus-visible {
+	color: var( --wp-postratings-color-on, var( --wp-postratings-color-down, #e5484d ) );
+}
+
+.wp-postratings-updown button span {
+	position: absolute;
+	inline-size: 1px;
+	block-size: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* --- state --------------------------------------------------------------- */
+
+.wp-postratings[aria-busy="true"] {
+	opacity: 0.5;
+	transition: opacity var( --wp-postratings-transition, 120ms ease-in-out );
+}
+
+.wp-postratings[aria-busy="true"] label,
+.wp-postratings[aria-busy="true"] button {
+	pointer-events: none;
+}
+
+/* The rich snippet is <meta> elements inside a wrapper, which has to be a
+   block element to be valid and so has to be taken out of flow by hand. */
+.wp-postratings-schema {
+	display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.wp-postratings-vote label,
+	.wp-postratings-updown button,
+	.wp-postratings {
+		transition: none;
+	}
+}
+
+@media (prefers-contrast: more) {
+	.wp-postratings,
+	.wp-postratings-strip,
+	.wp-postratings-vote {
+		--wp-postratings-color-off: #6b7280;
+	}
+}
+
+/*
+ * The plugin paints one surface of its own -- the unrated shapes -- and the
+ * default for those is a light grey chosen against a light page. On a dark one
+ * it reads as almost-white, brighter than the rated colour it is meant to sit
+ * behind, so it is darkened rather than left to the theme.
+ *
+ * All three roots, and that is the whole point of the list. `.wp-postratings`
+ * is only added by the_ratings(), and two of the three surfaces never go
+ * through it: the widget prints a bare `.wp-postratings-strip` into the
+ * sidebar, and so do the shortcode and the block when asked for results only,
+ * because both reach the_ratings_results() through
+ * WP_PostRatings::render_ratings(). the_ratings_results() and
+ * the_ratings_vote() are public template tags besides, so a theme can print
+ * either on its own. Setting the variable on the container alone left every
+ * one of those reading the light default and glaring on a dark page.
+ */
+@media (prefers-color-scheme: dark) {
+	.wp-postratings,
+	.wp-postratings-strip,
+	.wp-postratings-vote {
+		--wp-postratings-color-off: #52525b;
+	}
+}
