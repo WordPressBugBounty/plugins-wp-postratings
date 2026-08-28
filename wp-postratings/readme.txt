@@ -3,8 +3,8 @@ Contributors: GamerZ
 Donate link: https://lesterchan.net/site/donation/  
 Tags: ratings, rating, vote, ajax, post  
 Requires at least: 6.8  
-Tested up to: 7.0  
-Stable tag: 2.0.0  
+Tested up to: 7.1  
+Stable tag: 2.0.1  
 Requires PHP: 8.2  
 License: GPLv2 or later  
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -17,7 +17,7 @@ WP-PostRatings adds a rating control to any post, page or custom post type. Visi
 
 ### Features
 
-* Nine rating shapes, drawn with CSS rather than shipped as images, so they stay sharp at any size and cost no HTTP requests.
+* Ten rating shapes, drawn with CSS rather than shipped as images, so they stay sharp at any size and cost no HTTP requests — numbers among them, for a scale whose points are read rather than counted.
 * A scale, or a two-way up/down control, with the rated and unrated colours as settings.
 * Template tags and a shortcode for the highest rated, most rated, lowest rated and highest scoring posts, optionally within a category, a tag or a time range.
 * A rating log with sortable columns, filters, bulk delete and Screen Options.
@@ -81,7 +81,7 @@ Reading is public, because a rating is public. Rating takes the same `wp_postrat
 
 Each response carries the rendered markup as well as the numbers, because your templates and your chosen shape decide what a rating looks like.
 
-**A refusal answers 403**, not 400 — a rating already cast, a rating off the end of the scale, a bad nonce. 400 is kept for a parameter this plugin never had a chance to look at, and a post that does not exist is 404.
+**A refusal answers 403**, not 400 — a rating already cast, a rating off the end of the scale, a bad nonce. 400 is kept for a parameter this plugin never had a chance to look at. A post that does not exist answers 404, and so does one you are not allowed to rate — a draft belonging to somebody else answers exactly as a deleted post does, rather than confirming it is there.
 
 **These routes are an addition.** The `admin-ajax.php` `wp_postratings` action is unchanged and still supported.
 
@@ -109,7 +109,7 @@ Before 2.0.0 a different colour meant a whole extra folder of images, which is w
 
 ### How do I use my own rating shape?
 
-Register it with the `wp_postratings_shapes` filter. It then appears on the Ratings Options screen like any built-in shape, and unlike the old approach of dropping a folder into `wp-content/plugins/wp-postratings/images/`, it survives an update.
+Register it with the `wp_postratings_shapes` filter. It then appears on the Ratings Settings screen like any built-in shape, and unlike the old approach of dropping a folder into `wp-content/plugins/wp-postratings/images/`, it survives an update.
 
 ~~~
 add_filter( 'wp_postratings_shapes', function ( $shapes ) {
@@ -125,10 +125,25 @@ add_filter( 'wp_postratings_shapes', function ( $shapes ) {
 
 The path is SVG path data drawn in a 24x24 box. For an up/down control use `'type' => 'updown'` and supply `'up'` and `'down'` paths instead of `'path'`.
 
+For a scale whose points are numbers rather than a repeated glyph, use `'type' => 'numeric'` and supply no path at all — the position is the glyph:
+
+~~~
+add_filter( 'wp_postratings_shapes', function ( $shapes ) {
+	$shapes['points'] = array(
+		'type'  => 'numeric',
+		'label' => 'Points',
+	);
+
+	return $shapes;
+} );
+~~~
+
+A numeric shape is still a scale, so it appears under **Scale** on the settings screen and everything that reads a rating goes on reading it the same way. Only the drawing changes.
+
 
 ### Every visitor can rate over and over, or every rating log entry shows the same IP
 
-This is about the **Header That Contains The IP** field on the Ratings Options screen.
+This is about the **Header That Contains The IP** field on the Ratings Settings screen.
 
 Leave it blank unless your site is genuinely behind a reverse proxy or CDN such as Cloudflare. Blank means the plugin uses the address your web server actually saw, which is what you want on a normal host.
 
@@ -476,18 +491,34 @@ These examples use `WP_Query` rather than `query_posts()`, which the old ones ca
 5. The Ratings block in the editor, previewing the control for the post it is pointed at, with the sidebar choosing that post and whether the rating can be cast or only read
 
 ## Changelog
+### 2.0.1
+* NEW: **Numbers is a rating shape again.** It was the one pre-2.0.0 image set with no shape to land on — every other set was a glyph repeated once per point, and a CSS mask cannot differ per position — so it was parked on circles, and a site that had chosen numbers came back from the update to five identical circles with no way to get the digits back. Numbers is now a shape of its own, offered under **Scale** beside the others, and the `numbers` image set maps onto it. It draws as one continuous bar of cells rather than five floating glyphs, and takes its colours from the Rated and Not rated settings like every other shape, so it has no palette of its own. Sites already migrated onto circles can simply select it; nothing about their ratings changes, only what those ratings are drawn with
+* NEW: `wp_postratings_shapes` accepts `'type' => 'numeric'`, for a scale drawn as its own positions. Such a shape needs no path, and the digits follow the site's locale
+* FIXED: The shape picker grouped its rows by the shape's exact type rather than by the control it is — a scale, or a pair of opposing actions. Any shape whose type was neither of the two words the radios offer landed in a group no radio could select and stayed hidden
+* NEW: A Settings link on the plugin's row on the Plugins screen
+* FIXED: A visitor who may not rate is now told the actual reason. One template covers every refusal and it carried a single sentence written for one of them, so a site set to **Guests Only** refused a logged-in member and then told them to become a registered member — the one thing that would not have helped. The three reasons now read separately, and the sentence comes from a new `%RATINGS_PERMISSION%` variable. The update puts that variable into the stored Ratings No Permission Text in place of the old sentence, so an existing site gets the corrected wording without touching its settings — and a site that had reworded that sentence keeps its own wording untouched.
+* FIXED: The numbers shape drew its box two different ways — the sides as a border on the container, the top and bottom as inset shadows on the bar inside it. Same colour, but the sides fell on the page background while the top and bottom fell on the bar's own tint, so the sides came out at several times the contrast and the box read as two heavy verticals with nothing joining them. All four edges are now drawn together, and the bar is no longer two pixels narrower than the box around it.
+* FIXED: Only one request at a time runs the outstanding upgrade. Until the plugin records itself as current the check runs on every front-end request, and the part of it that adds the log table's indexes reads the table's index list and then alters the table — so on a busy site two requests could both find an index missing and both try to add it, the second waiting on the first for as long as the alter took.
+* CHANGED: A stylesheet named `wp-postratings.css` in the parent theme now overrides the plugin's copy too; a child theme's copy still wins over both
+* FIXED: The comment author ratings display, which a theme opts into with the `wp_postratings_display_comment_author_ratings` filter, showed nothing at all on a block theme. It read the comment from a global that only a classic theme's comment loop sets; a block theme renders each comment through the comment template block, which passes the comment along instead and leaves that global empty. The comment now comes from where the `comment_text` filter puts it, so the display works on both.
+* FIXED: The comment author ratings display, which is off unless a theme opts in, still cost its query: every page with a loop fetched every rating the displayed post had ever received, then threw them away. Sites that have not opted in no longer pay it — one query fewer on every page, and on a heavily rated post it was not a small one.
+* CHANGED: The stylesheet and script load only on pages that actually render a rating — from the template tags, the shortcode, the block, the widget, the statistics lists or the comment author display. Pages with no rating on them no longer carry either file; pages with one get both — in the head where the page's content already shows a rating coming, in the footer for the renders the head cannot see.
+* FIXED: Nothing unpublished could be rated by anybody, including the people who wrote it. 2.0.0 required a post to be publicly viewable before it would accept a rating — which stops a stranger rating your drafts, and was the point — but it never asked who was rating, so a site whose editors rate their own drafts, pending or private posts got `Invalid Post ID` on every vote. A post you can already read is now ratable whether or not the public can see it, and the message no longer blames the post ID, which is rarely what is wrong with it.
+* NEW: `wp_postratings_is_ratable` filters whether a given post may be rated at all, for sites whose answer is neither of the two above.
+* CHANGED: The REST error code for a post that may not be rated is `wp_postratings_not_ratable` rather than `wp_postratings_no_such_post`. The status is still 404, deliberately: a 403 would tell a stranger that the draft exists.
+
 ### 2.0.0
 * FIXED: Any post ID could be rated, not only a published one. A visitor who was never signed in could seed `ratings_users`, `ratings_score` and `ratings_average` onto a draft, a pending, a private or a trashed post — so it arrived already rated on the day it was published — and the unpublished title was copied into the log table, where the Logs screen then displayed it. On a site that had put `%POST_TITLE%` or `%POST_CONTENT%` into the text template, the reply returned unpublished content directly. Both the AJAX action and the REST route now require a post that is actually publicly viewable
 * NEW: A `wp postratings` WP-CLI command — `list`, `get` and `delete`, with `--what=logs|data|both`.
 * NEW: A `postratings/v1` REST API for reading a post's rating and casting one. The `admin-ajax.php` `wp_postratings` action is unchanged and still supported.
 * NEW: A **Ratings** block for the editor, with the post id and a results-only toggle in the sidebar. It renders on the server through the same code the shortcode does, so the editor preview is the real rating. The `[ratings]` shortcode is unchanged and still supported — the block is an addition beside it, nothing needs migrating, and posts already holding a shortcode need no edit.
-* BREAKING: Requires WordPress 6.8 and PHP 8.2, up from 6.0 and 7.4.
-* BREAKING: The rating images are gone. All 16 image sets and their 121 GIF and PNG files are replaced by 9 SVG shapes drawn with CSS, so ratings are sharp on every screen and cost no HTTP requests. Your chosen set is migrated automatically to the matching shape: stars, stars_crystal, stars_dark, stars_png and stars_flat_png all become `star`, thumbs becomes `thumb`, and so on. If you added your own folder to `images/` it will fall back to stars; see the FAQ for how to register a custom shape properly, which unlike the old folder survives an update.
+* BREAKING: Requires WordPress 6.8 and PHP 8.2.
+* BREAKING: The rating images are gone. All 16 image sets and their 121 GIF and PNG files are replaced by 10 shapes drawn with CSS, so ratings are sharp on every screen and cost no HTTP requests. Your chosen set is migrated automatically to the matching shape: stars, stars_crystal, stars_dark, stars_png and stars_flat_png all become `star`, thumbs becomes `thumb`, and so on. If you added your own folder to `images/` it will fall back to stars; see the FAQ for how to register a custom shape properly, which unlike the old folder survives an update.
 * BREAKING: The rating markup has changed completely. A scale is now a group of radio buttons and an up/down is a pair of buttons, so the control announces itself correctly to screen readers and works from the keyboard. Every class and element id is now prefixed with the plugin slug: `.post-ratings` is `.wp-postratings`, `.post-ratings-image` no longer exists at all, and the wrapper id is `wp-postratings-123` rather than `post-ratings-123`. Colour, size and spacing are CSS custom properties, which is usually a one-line replacement; see the FAQ.
 * BREAKING: The vote images no longer carry inline `onmouseover`/`onclick` attributes; hovering and clicking are handled by one delegated listener. Custom CSS or JavaScript that targeted those inline handlers, or that called `current_rating()` or `rate_post()` directly, needs updating.
 * BREAKING: The `rate_post` action is renamed `wp_postratings_rate_post` and the old name is gone, with no deprecation shim. Its three arguments are unchanged.
 * BREAKING: Every class is renamed to `WP_PostRatings_*`, and the plugin's own classes are no longer called `Postratings_*`. `RATINGS_IMG_EXT` is now `WP_POSTRATINGS_IMG_EXT`.
-* BREAKING: The settings screen moved to `WP-Admin -> Ratings -> Settings`, at `admin.php?page=wp-postratings-settings`. Ratings Options and Ratings Templates are the two tabs of that one page rather than two menu entries.
+* BREAKING: The settings screen moved to `WP-Admin -> Ratings -> Settings`, at `admin.php?page=wp-postratings-settings`. Settings and Templates are the two tabs of that one page rather than two menu entries.
 * BREAKING: The option rows are renamed. The fifteen `postratings_*` rows become one `wp_postratings_options`, and the two separate version markers become one `wp_postratings_version`. Your settings are migrated automatically on the first load after the update.
 * BREAKING: The shared, unprefixed `stats_display` and `stats_mostlimit` option rows are no longer read. WP-Stats integration is now two settings of this plugin's own, on the Settings tab, and WP-Stats asks each plugin for its section through the `wp_stats_sections` filter rather than reading anybody's options. Update all seven WP-Stats-aware plugins together; see the Upgrade Notice.
 * BREAKING: If you set "Header That Contains The IP" (for Cloudflare, a load balancer or any reverse proxy), that header is now parsed as the forwarded-for chain it is, and only the first valid address in it is used. Previously the whole header value was stored, so a visitor could rate repeatedly just by appending another address to it. Existing rating logs recorded through such a header will no longer match, so some visitors may be able to rate once more. Leave the field blank unless you are actually behind a proxy. See the FAQ.
@@ -530,13 +561,13 @@ Requires WordPress 6.8 and PHP 8.2.
 
 **Update all seven WP-Stats plugins together.** WP-Stats, WP-PostRatings, WP-Polls, WP-EMail, WP-PostViews, WP-DownloadManager and WP-DraftsForFriends shared two unprefixed rows, `stats_display` and `stats_mostlimit`. Each now keeps its own copy and deletes the shared rows once it has read them, so whichever you update first takes them from the rest. A missing row means "show", so a block you had switched off may reappear — switch it off again under **Ratings -> Settings -> WP-Stats**, where the setting and the entries-per-list figure now live.
 
-**The settings screen is at Ratings -> Settings**, with Ratings Options and Ratings Templates as two tabs of it. `admin.php?page=wp-postratings-options` is now `admin.php?page=wp-postratings-settings`. The capability is still `manage_ratings`.
+**The settings screen is at Ratings -> Settings**, with Settings and Templates as two tabs of it. `admin.php?page=wp-postratings-options` is now `admin.php?page=wp-postratings-settings`. The capability is still `manage_ratings`.
 
 **Two Google rich snippet settings became one, defaulting to No.** "Enable Google Rich Snippets?" and "Enable Ratings In Rich Snippets?" are now **Show ratings in Google results?**. The old markup declared `schema.org/Article`, and Google shows ratings only for Book, Course, Event, Local Business, Movie, Organization, Product, Recipe, Software App and a few subtypes — so on an ordinary post it never produced a rich result.
 
 If you filtered `wp_postratings_schema_itemtype` to a supported type, you *were* getting a real rich result, and it stops until you select that same type in the new setting. The filter still runs and still has the last word. Pick a type only if the content genuinely is that thing: marking a blog post as a `Product` to collect stars is spammy structured markup, and it costs a manual action.
 
-**Rating images are now CSS shapes.** The 16 image sets are 9 shapes; whichever set you had is mapped to the matching shape automatically. A custom image folder falls back to stars — the FAQ shows how to register a shape instead, which survives updates.
+**Rating images are now CSS shapes.** The 16 image sets are 10 shapes; whichever set you had is mapped to the matching shape automatically. A custom image folder falls back to stars — the FAQ shows how to register a shape instead, which survives updates.
 
 **Custom CSS needs updating.** Every class and id is slug-prefixed now:
 

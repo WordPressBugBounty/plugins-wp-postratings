@@ -5,9 +5,7 @@
  * @package WP-PostRatings
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
+defined( 'ABSPATH' ) || exit;
 
 /**
  * Boots the plugin and owns the front end hooks.
@@ -42,12 +40,12 @@ class WP_PostRatings {
 	private function __construct() {
 		$this->register_table();
 
-		// register_activation_hook() has to run at file load time, which is
-		// where WordPress requires it.
+		// Must be registered at file-load time, which is when this runs.
 		register_activation_hook( WP_POSTRATINGS_MAIN_FILE, array( 'WP_PostRatings_Install', 'activate' ) );
 
 		// Deliberately on init rather than admin_init. Activation does not fire
-		// on a plugin *update*, and an automatic background update runs on
+		// on a plugin update, which is the single most common reason a
+		// migration never runs -- and an automatic background update runs on
 		// cron, which is not an admin request: hooking this to the admin only
 		// would leave such a site serving its front end with default settings
 		// -- default templates, default scale -- while its real ones sat in the
@@ -55,6 +53,8 @@ class WP_PostRatings {
 		// autoloaded option, so an already-migrated install pays a lookup.
 		add_action( 'init', array( 'WP_PostRatings_Install', 'maybe_upgrade' ), 5 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'scripts' ) );
+		// Priority 10, ahead of core printing footer scripts and late styles at 20.
+		add_action( 'wp_footer', array( $this, 'footer_scripts' ) );
 		add_action( 'enqueue_block_assets', array( $this, 'block_editor_styles' ) );
 
 		add_shortcode( 'ratings', array( $this, 'shortcode' ) );
@@ -131,11 +131,75 @@ class WP_PostRatings {
 	}
 
 	/**
-	 * Enqueue the front end assets.
+	 * Enqueue the front end assets, where the head can already see a rating coming.
+	 *
+	 * A page showing no rating carries neither the stylesheet nor the script.
+	 * The shapes visible this early are the active widget and a shortcode or
+	 * block in the current post; anything rendering later than the head -- a
+	 * theme's template tag, a loop page, the comment author strip -- asks via
+	 * WP_PostRatings_Template::request_assets() and footer_scripts() picks it
+	 * up.
 	 *
 	 * @return void
 	 */
 	public function scripts() {
+		if ( ! $this->needs_assets() ) {
+			return;
+		}
+
+		$this->enqueue_assets();
+	}
+
+	/**
+	 * Whether the current request is already known to render a rating.
+	 *
+	 * @return bool
+	 */
+	protected function needs_assets() {
+		if ( is_active_widget( false, false, 'ratings-widget', true ) ) {
+			return true;
+		}
+
+		$post = get_post();
+
+		if ( ! $post instanceof WP_Post ) {
+			return false;
+		}
+
+		return has_shortcode( $post->post_content, 'ratings' )
+			|| has_block( 'wp-postratings/ratings', $post );
+	}
+
+	/**
+	 * Enqueue late, for a rating the head could not see coming.
+	 *
+	 * Runs at `wp_footer` priority 10, before core prints footer scripts and
+	 * late styles at 20, so both assets still make it onto the page.
+	 *
+	 * @return void
+	 */
+	public function footer_scripts() {
+		if ( ! WP_PostRatings_Template::needs_assets() ) {
+			return;
+		}
+
+		$this->enqueue_assets();
+	}
+
+	/**
+	 * The stylesheet, and the script with its strings and the AJAX endpoint.
+	 *
+	 * Guarded on the style handle because both passes can run on one request,
+	 * and wp_localize_script() appends rather than replaces -- a second pass
+	 * would print the script's data twice.
+	 *
+	 * @return void
+	 */
+	protected function enqueue_assets() {
+		if ( wp_style_is( 'wp-postratings', 'enqueued' ) ) {
+			return;
+		}
+
 		$this->styles();
 
 		// The empty dependency array is the point: the script is vanilla
@@ -189,7 +253,9 @@ class WP_PostRatings {
 	 * The block wraps its preview in `inert` for the same reason.
 	 *
 	 * Guarded on is_admin() because `enqueue_block_assets` fires on the front
-	 * end too, where scripts() has already done this on `wp_enqueue_scripts`.
+	 * end too, where the conditional enqueue owns the decision: every page
+	 * that renders a rating gets the styles from one of its two passes, and a
+	 * page that renders none wants nothing.
 	 *
 	 * @return void
 	 */
@@ -204,7 +270,8 @@ class WP_PostRatings {
 	/**
 	 * URL of a stylesheet, preferring a copy shipped by the active theme.
 	 *
-	 * The theme may place it at the root or under css/.
+	 * A copy in the child theme wins, then one in the parent theme, then the
+	 * plugin's own. The theme may place it at the root or under css/.
 	 *
 	 * @param string $file Stylesheet file name.
 	 *
@@ -214,6 +281,10 @@ class WP_PostRatings {
 		foreach ( array( $file, 'css/' . $file ) as $candidate ) {
 			if ( file_exists( get_stylesheet_directory() . '/' . $candidate ) ) {
 				return get_stylesheet_directory_uri() . '/' . $candidate;
+			}
+
+			if ( file_exists( get_template_directory() . '/' . $candidate ) ) {
+				return get_template_directory_uri() . '/' . $candidate;
 			}
 		}
 

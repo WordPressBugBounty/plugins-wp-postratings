@@ -5,9 +5,7 @@
  * @package WP-PostRatings
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
+defined( 'ABSPATH' ) || exit;
 
 /**
  * Records votes and decides who may cast one.
@@ -49,13 +47,13 @@ class WP_PostRatings_Rating {
 	);
 
 	/**
-	 * Hook the AJAX endpoints.
+	 * Hook registration.
 	 *
 	 * @return void
 	 */
 	public static function init() {
-		add_action( 'wp_ajax_wp_postratings', array( __CLASS__, 'handle_vote' ) );
-		add_action( 'wp_ajax_nopriv_wp_postratings', array( __CLASS__, 'handle_vote' ) );
+		add_action( 'wp_ajax_wp_postratings', array( __CLASS__, 'ajax_vote' ) );
+		add_action( 'wp_ajax_nopriv_wp_postratings', array( __CLASS__, 'ajax_vote' ) );
 	}
 
 	/**
@@ -78,6 +76,89 @@ class WP_PostRatings_Rating {
 			default:
 				return true;
 		}
+	}
+
+	/**
+	 * Why the current visitor may not rate, as a sentence to show them.
+	 *
+	 * One template covers every refusal, so before this existed it carried one
+	 * hard-coded sentence for all of them -- and that sentence was written for
+	 * the logged-in-only case. A site set to Guests Only refuses a logged-in
+	 * member and then told them to become a registered member, which is the
+	 * opposite of what would let them rate.
+	 *
+	 * Empty when the visitor may rate: the token expands to nothing rather than
+	 * to a sentence contradicting a control the reader can see.
+	 *
+	 * @since 2.0.1
+	 *
+	 * @return string
+	 */
+	public static function permission_message() {
+		if ( self::can_rate() ) {
+			$message = '';
+		} else {
+			switch ( (int) WP_PostRatings_Options::get( 'allowtorate' ) ) {
+				case 0:
+					$message = __( 'Only visitors who are not logged in may rate this.', 'wp-postratings' );
+					break;
+				case 3:
+					$message = __( 'You need to be a member of this site to rate this.', 'wp-postratings' );
+					break;
+				case 1:
+				default:
+					$message = __( 'You need to be logged in to rate this.', 'wp-postratings' );
+					break;
+			}
+		}
+
+		/**
+		 * Filters the sentence explaining why the visitor may not rate.
+		 *
+		 * @since 2.0.1
+		 *
+		 * @param string $message The sentence, or '' when the visitor may rate.
+		 */
+		return (string) apply_filters( 'wp_postratings_permission_message', $message );
+	}
+
+	/**
+	 * Whether a post is one that may be rated.
+	 *
+	 * Publicly viewable, or readable by whoever is asking. The guard is there to
+	 * stop a stranger seeding a rating onto a post nobody has published -- and
+	 * reading its title and content back out of %POST_TITLE% and %POST_CONTENT%
+	 * in the text template -- not to stop a site rating its own unpublished
+	 * posts, which is a workflow this plugin has always supported and 2.0.0
+	 * broke. `read_post` maps to `edit_post` on every unpublished status, so
+	 * nobody is handed a post they could not already open.
+	 *
+	 * @since 2.0.1
+	 *
+	 * @param int|WP_Post $post Post, or its id.
+	 *
+	 * @return bool
+	 */
+	public static function is_ratable( $post ) {
+		// Resolved from the id rather than passed straight through, because
+		// get_post() answers a null with whichever post the loop is on.
+		$post_id = $post instanceof WP_Post ? (int) $post->ID : (int) $post;
+		$post    = $post_id > 0 ? get_post( $post_id ) : null;
+
+		$ratable = $post instanceof WP_Post
+			&& ! wp_is_post_revision( $post )
+			&& ( is_post_publicly_viewable( $post ) || current_user_can( 'read_post', $post_id ) );
+
+		/**
+		 * Filters whether a post may be rated.
+		 *
+		 * @since 2.0.1
+		 *
+		 * @param bool         $ratable Whether the vote may proceed.
+		 * @param WP_Post|null $post    Post being rated, or null if the id names none.
+		 * @param int          $post_id Post id that was asked about.
+		 */
+		return (bool) apply_filters( 'wp_postratings_is_ratable', $ratable, $post, $post_id );
 	}
 
 	/**
@@ -492,7 +573,7 @@ class WP_PostRatings_Rating {
 	 *
 	 * @return void
 	 */
-	public static function handle_vote() {
+	public static function ajax_vote() {
 		$rate    = isset( $_REQUEST['rate'] ) ? (int) $_REQUEST['rate'] : 0;
 		$post_id = isset( $_REQUEST['pid'] ) ? (int) $_REQUEST['pid'] : 0;
 
@@ -518,7 +599,7 @@ class WP_PostRatings_Rating {
 	/**
 	 * Apply a vote and build the response.
 	 *
-	 * Split out from handle_vote() so it can be driven from a test: the handler
+	 * Split out from ajax_vote() so it can be driven from a test: the handler
 	 * ends in exit(), which takes the runner with it.
 	 *
 	 * **Returns on success and throws on every refusal**, which is the same
@@ -577,25 +658,14 @@ class WP_PostRatings_Rating {
 				throw new InvalidArgumentException( esc_html( sprintf( __( 'You Had Already Rated This Post. Post ID #%s.', 'wp-postratings' ), $post_id ) ) );
 			}
 
-			$post = get_post( $post_id );
-
-			/*
-			 * is_post_publicly_viewable() as well, because get_post() plus the
-			 * revision test accepted every other row in wp_posts: drafts,
-			 * pending, private, trashed, auto-drafts, attachments and any
-			 * published-but-not-public custom type. An unauthenticated visitor
-			 * could therefore seed ratings_users, ratings_score and
-			 * ratings_average on a post nobody has published -- so it arrived
-			 * already rated on the day it went live -- and record() copies the
-			 * unpublished title into rating_posttitle, where the Logs screen
-			 * then shows it. On a site that has put %POST_TITLE% or
-			 * %POST_CONTENT% into the text template, the response body returns
-			 * the unpublished content directly.
-			 */
-			if ( ! $post || wp_is_post_revision( $post ) || ! is_post_publicly_viewable( $post ) ) {
+			// Deliberately one message for "no such post" and "not one you may
+			// rate": telling them apart tells a stranger which drafts exist.
+			if ( ! self::is_ratable( $post_id ) ) {
 				/* translators: %s: post id. */
-				throw new InvalidArgumentException( esc_html( sprintf( __( 'Invalid Post ID (#%s).', 'wp-postratings' ), $post_id ) ) );
+				throw new InvalidArgumentException( esc_html( sprintf( __( 'This Post Cannot Be Rated (#%s).', 'wp-postratings' ), $post_id ) ) );
 			}
+
+			$post = get_post( $post_id );
 
 			$totals = self::record( $post, $rate, $ratings_values[ $rate - 1 ] );
 

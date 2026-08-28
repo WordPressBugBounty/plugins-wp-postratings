@@ -5,9 +5,7 @@
  * @package WP-PostRatings
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
+defined( 'ABSPATH' ) || exit;
 
 /**
  * The settings screen, built on the Settings API.
@@ -97,7 +95,7 @@ class WP_PostRatings_Settings {
 	 */
 	public static function capability( $context = 'settings' ) {
 		/**
-		 * Filters the capability required to manage the plugin.
+		 * Filters the capability required to reach a WP-PostRatings screen.
 		 *
 		 * @since 2.0.0
 		 *
@@ -120,13 +118,36 @@ class WP_PostRatings_Settings {
 	}
 
 	/**
-	 * Register the settings.
+	 * Hook registration.
 	 *
 	 * @return void
 	 */
 	public static function init() {
 		add_action( 'admin_init', array( __CLASS__, 'register' ) );
 		add_action( 'wp_ajax_wp_postratings_rating_fields', array( __CLASS__, 'ajax_rating_fields' ) );
+		add_filter(
+			'plugin_action_links_' . plugin_basename( WP_POSTRATINGS_MAIN_FILE ),
+			array( __CLASS__, 'action_links' )
+		);
+	}
+
+	/**
+	 * Add a Settings link on the Plugins screen row.
+	 *
+	 * @param string[] $links Existing action links.
+	 * @return string[]
+	 */
+	public static function action_links( $links ) {
+		array_unshift(
+			$links,
+			sprintf(
+				'<a href="%s">%s</a>',
+				esc_url( add_query_arg( 'page', self::page(), admin_url( 'admin.php' ) ) ),
+				esc_html__( 'Settings', 'wp-postratings' )
+			)
+		);
+
+		return $links;
 	}
 
 	/**
@@ -344,9 +365,7 @@ class WP_PostRatings_Settings {
 		 * actions, and two places holding one fact is how they end up
 		 * disagreeing.
 		 */
-		$current_type = WP_PostRatings_Shapes::is_updown( $selected )
-			? WP_PostRatings_Shapes::UPDOWN
-			: WP_PostRatings_Shapes::SCALE;
+		$current_type = WP_PostRatings_Shapes::family( $selected );
 
 		echo '<p class="wp-postratings-type-choice">';
 
@@ -369,12 +388,17 @@ class WP_PostRatings_Settings {
 		foreach ( WP_PostRatings_Shapes::all() as $name => $shape ) {
 			$is_updown = WP_PostRatings_Shapes::UPDOWN === $shape['type'];
 
+			// The family the row belongs to, not the shape's own type: grouping by
+			// the type puts a numeric scale in a group no radio names, and the
+			// picker then hides it permanently.
+			$family = WP_PostRatings_Shapes::family( $name );
+
 			// Wrapped in .wp-postratings so the preview inherits the colours the
 			// site has chosen: they are scoped to the wrapper, not to :root.
 			printf(
 				'<p class="wp-postratings-shape-row" data-rating-type="%1$s"%2$s>',
-				esc_attr( $shape['type'] ),
-				$shape['type'] === $current_type ? '' : ' hidden'
+				esc_attr( $family ),
+				$family === $current_type ? '' : ' hidden'
 			);
 			printf(
 				'<input type="radio" name="%s" value="%s"%s data-custom="%d" data-max="%d" class="wp-postratings-shape-choice" />',
@@ -771,7 +795,7 @@ class WP_PostRatings_Settings {
 		return array(
 			'vote'         => '%RATINGS_IMAGES_VOTE% (<strong>%RATINGS_SCORE%</strong> ' . $rating . $comma . ' <strong>%RATINGS_USERS%</strong> ' . $votes . ')<br />%RATINGS_TEXT%',
 			'text'         => '%RATINGS_IMAGES% (<em><strong>%RATINGS_SCORE%</strong> ' . $rating . $comma . ' <strong>%RATINGS_USERS%</strong> ' . $votes . $comma . ' <strong>' . $rated . '</strong></em>)',
-			'permission'   => '%RATINGS_IMAGES% (<em><strong>%RATINGS_SCORE%</strong> ' . $rating . $comma . ' <strong>%RATINGS_USERS%</strong> ' . $votes . $comma . ' <strong>' . $rated . '</strong></em>)<br /><em>' . __( 'You need to be a registered member to rate this.', 'wp-postratings' ) . '</em>',
+			'permission'   => '%RATINGS_IMAGES% (<em><strong>%RATINGS_SCORE%</strong> ' . $rating . $comma . ' <strong>%RATINGS_USERS%</strong> ' . $votes . $comma . ' <strong>' . $rated . '</strong></em>)<br /><em>%RATINGS_PERMISSION%</em>',
 			'none'         => '%RATINGS_IMAGES_VOTE% (' . __( 'No Ratings Yet', 'wp-postratings' ) . ')<br />%RATINGS_TEXT%',
 			'highestrated' => '<li><a href="%POST_URL%" title="%POST_TITLE%">%POST_TITLE%</a> (%RATINGS_SCORE% ' . $rating . $comma . ' %RATINGS_USERS% ' . $votes . ')</li>',
 			'mostrated'    => '<li><a href="%POST_URL%" title="%POST_TITLE%">%POST_TITLE%</a> - %RATINGS_USERS% ' . $votes . '</li>',
@@ -802,7 +826,7 @@ class WP_PostRatings_Settings {
 			),
 			'permission'   => array(
 				__( 'Ratings No Permission Text:', 'wp-postratings' ),
-				array( '%RATINGS_IMAGES%', '%RATINGS_MAX%', '%RATINGS_SCORE%', '%RATINGS_USERS%', '%RATINGS_AVERAGE%', '%RATINGS_PERCENTAGE%' ),
+				array( '%RATINGS_IMAGES%', '%RATINGS_MAX%', '%RATINGS_SCORE%', '%RATINGS_USERS%', '%RATINGS_AVERAGE%', '%RATINGS_PERCENTAGE%', '%RATINGS_PERMISSION%' ),
 			),
 			'none'         => array(
 				__( 'Ratings None:', 'wp-postratings' ),

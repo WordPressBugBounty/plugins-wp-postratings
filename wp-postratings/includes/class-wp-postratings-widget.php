@@ -5,9 +5,7 @@
  * @package WP-PostRatings
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
+defined( 'ABSPATH' ) || exit;
 
 /**
  * Sidebar widget listing the top rated posts.
@@ -22,9 +20,9 @@ class WP_PostRatings_Widget extends WP_Widget {
 	public function __construct() {
 		parent::__construct(
 			'ratings-widget',
-			esc_html__( 'Ratings', 'wp-postratings' ),
+			__( 'Ratings', 'wp-postratings' ),
 			array(
-				'description'                 => esc_html__( 'WP-PostRatings ratings statistics', 'wp-postratings' ),
+				'description'                 => __( 'WP-PostRatings ratings statistics', 'wp-postratings' ),
 				'customize_selective_refresh' => true,
 			)
 		);

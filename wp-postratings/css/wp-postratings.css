@@ -11,14 +11,9 @@
  *     }
  */
 
-/*
- * There is no defaults block on purpose. Every custom property carries its
- * default as a var() fallback at the point it is used, which is how wp-polls
- * does it, and it means the values injected by the settings screen have
- * nothing to compete with. Declaring defaults on .wp-postratings and injecting
- * on :root -- the arrangement this replaced -- loses on specificity, so the
- * chosen colour silently never applied.
- */
+/* No defaults block on purpose: each property carries its default as a var()
+   fallback where it is used, so the settings screen's injected values have
+   nothing to lose a specificity contest against. */
 
 .wp-postratings {
 	display: inline-flex;
@@ -34,14 +29,9 @@
 	padding-inline-start: 8px;
 }
 
-/* The picker compares shapes, so the previews use the built-in colours whatever
-   the ratings below have been set to -- otherwise every row is the colour of
-   the current rating and the one thing being chosen is the one thing not shown.
-
-   Literals, not var( ..., fallback ): the strip carries the rating's colour as
-   an inline custom property, which would win over any fallback. These have to
-   stay equal to WP_PostRatings_Options::COLOR_RATED and COLOR_UNRATED, and
-   test_the_built_in_colours_match_the_stylesheet holds them there. */
+/* Built-in colours, so the picker compares shapes rather than the current
+   rating's colour. Literals, because the strip's inline custom property would
+   beat a var() fallback; a test holds them equal to the PHP constants. */
 .wp-postratings-shape-preview .wp-postratings-track {
 	color: #d4d4d8;
 }
@@ -51,13 +41,8 @@
 	color: #f5a623;
 }
 
-/* The shape picker on the settings screen: one shape per line.
-   No display of its own. A <p> is already block-level, so the rows separate
-   without help -- they only ever shared a line because .wp-postratings used to
-   be on the <p> itself, and that is inline-flex. Putting display:flex here
-   instead made every child a flex item, including the preview, which is its own
-   flex container and stopped drawing. The lesson twice over: leave the rating
-   wrapper's layout alone. */
+/* No display of its own, twice learnt: the <p> already stacks, and display:flex
+   here makes the preview a flex item and it stops drawing. */
 .wp-postratings-shape-row {
 	margin-block: 0.5em;
 }
@@ -88,6 +73,79 @@
 	mask-position: center;
 	-webkit-mask-size: contain;
 	mask-size: contain;
+}
+
+/* --- numbers instead of a mask ------------------------------------------- */
+
+.wp-postratings-numeric .wp-postratings-item {
+	inline-size: auto;
+	min-inline-size: var( --wp-postratings-size, 20px );
+	background-color: transparent;
+	-webkit-mask-image: none;
+	mask-image: none;
+	font-style: normal;
+	font-size: calc( var( --wp-postratings-size, 20px ) * 0.85 );
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	display: grid;
+	place-items: center;
+	line-height: 1;
+}
+
+.wp-postratings-numeric .wp-postratings-row,
+.wp-postratings-numeric.wp-postratings-vote {
+	gap: var( --wp-postratings-gap, 0 );
+}
+
+/* Equal columns, so the two-digit cell on a ten point scale cannot outgrow the
+   rest on a wider font and put the percentage fill off a cell boundary. */
+.wp-postratings-numeric .wp-postratings-row {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: 1fr;
+}
+
+/* One outline for all four edges: a border on the sides and inset shadows top
+   and bottom read at different weights. It also costs no layout width. */
+.wp-postratings-numeric.wp-postratings-strip,
+.wp-postratings-numeric.wp-postratings-scale {
+	outline: 1px solid var( --wp-postratings-color-off, #d4d4d8 );
+	outline-offset: -1px;
+}
+
+/* The scale's steps are separate boxes, so each still draws its own edges. */
+.wp-postratings-numeric.wp-postratings-scale label {
+	box-shadow:
+		inset 0 1px 0 var( --wp-postratings-color-off, #d4d4d8 ),
+		inset 0 -1px 0 var( --wp-postratings-color-off, #d4d4d8 );
+}
+
+.wp-postratings-numeric .wp-postratings-track .wp-postratings-item,
+.wp-postratings-numeric .wp-postratings-fill .wp-postratings-item {
+	background-color: color-mix( in srgb, currentColor 16%, transparent );
+}
+
+.wp-postratings-numeric.wp-postratings-scale label {
+	background-image: linear-gradient(
+		to right,
+		color-mix( in srgb, var( --wp-postratings-color-on, #f5a623 ) 16%, transparent ) var( --wp-postratings-step-fill, 0% ),
+		color-mix( in srgb, var( --wp-postratings-color-off, #d4d4d8 ) 16%, transparent ) var( --wp-postratings-step-fill, 0% )
+	);
+}
+
+[dir="rtl"] .wp-postratings-numeric.wp-postratings-scale label {
+	background-image: linear-gradient(
+		to left,
+		color-mix( in srgb, var( --wp-postratings-color-on, #f5a623 ) 16%, transparent ) var( --wp-postratings-step-fill, 0% ),
+		color-mix( in srgb, var( --wp-postratings-color-off, #d4d4d8 ) 16%, transparent ) var( --wp-postratings-step-fill, 0% )
+	);
+}
+
+.wp-postratings-numeric.wp-postratings-scale:hover label,
+.wp-postratings-numeric.wp-postratings-scale:focus-within label,
+.wp-postratings-numeric.wp-postratings-scale:has( input:checked ) label {
+	background-image: none;
+	background-color: color-mix( in srgb, currentColor 16%, transparent );
 }
 
 /* --- read-only display --------------------------------------------------- */
@@ -127,11 +185,8 @@
 	color: var( --wp-postratings-color-on, #f5a623 );
 }
 
-/*
- * The filled layer sits over the track and is clipped to a percentage, so a
- * 3.7 of 5 renders as 74% rather than being rounded to the nearest half image
- * the way the pre-2.0.0 GIF sets had to be.
- */
+/* Clipped to a percentage, so 3.7 of 5 renders as 74% rather than rounding to
+   the nearest half. */
 .wp-postratings-fill {
 	position: absolute;
 	inset-block: 0;
@@ -191,27 +246,16 @@
 	white-space: nowrap;
 }
 
-/*
- * Hovering or focusing one value fills it and everything before it. The row is
- * laid out in reverse so a plain sibling combinator can reach backwards, which
- * is what lets the whole hover behaviour be CSS rather than JavaScript
- * swapping image sources on every mouseover.
- */
+/* Laid out in reverse so a sibling combinator can reach backwards, which is
+   what keeps the hover fill in CSS rather than JavaScript. */
 .wp-postratings-scale {
 	flex-direction: row-reverse;
 	justify-content: flex-end;
 }
 
-/*
- * The score so far, painted into each shape rather than as one strip over the
- * row. A strip has to guess the row's geometry, and it cannot: a theme putting
- * padding on a label moves that label's glyph without moving anything the strip
- * knows about, and the two grids drift apart. Each glyph carries its own share
- * of the score instead, so alignment is not something the CSS has to get right.
- *
- * The gradient sits under the mask the shape is cut from, so a step filled 15%
- * is 15% of that shape.
- */
+/* Each glyph carries its own share of the score, rather than one strip laid
+   over the row: a strip has to guess the row's geometry and a theme's padding
+   on a label breaks that guess. */
 .wp-postratings-scale label .wp-postratings-item {
 	background-image: linear-gradient(
 		to right,
@@ -226,6 +270,18 @@
 		var( --wp-postratings-color-on, #f5a623 ) var( --wp-postratings-step-fill, 0% ),
 		var( --wp-postratings-color-off, #d4d4d8 ) var( --wp-postratings-step-fill, 0% )
 	);
+}
+
+.wp-postratings-numeric.wp-postratings-scale label .wp-postratings-item {
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+.wp-postratings-numeric.wp-postratings-scale:hover label .wp-postratings-item,
+.wp-postratings-numeric.wp-postratings-scale:focus-within label .wp-postratings-item,
+.wp-postratings-numeric.wp-postratings-scale:has( input:checked ) label .wp-postratings-item {
+	color: currentColor;
 }
 
 /* Interaction wins: hovering, focusing or having voted colours the labels, and
@@ -255,11 +311,7 @@
 
 /* --- voting: up / down --------------------------------------------------- */
 
-/*
- * Deliberately buttons rather than a radio group: this is a pair of opposing
- * actions, not one value out of several, and announcing it as a scale would
- * misrepresent it.
- */
+/* Buttons, not a radio group: two opposing actions, not one value of several. */
 .wp-postratings-updown button {
 	display: block;
 	border: 0;
@@ -337,22 +389,8 @@
 	}
 }
 
-/*
- * The plugin paints one surface of its own -- the unrated shapes -- and the
- * default for those is a light grey chosen against a light page. On a dark one
- * it reads as almost-white, brighter than the rated colour it is meant to sit
- * behind, so it is darkened rather than left to the theme.
- *
- * All three roots, and that is the whole point of the list. `.wp-postratings`
- * is only added by the_ratings(), and two of the three surfaces never go
- * through it: the widget prints a bare `.wp-postratings-strip` into the
- * sidebar, and so do the shortcode and the block when asked for results only,
- * because both reach the_ratings_results() through
- * WP_PostRatings::render_ratings(). the_ratings_results() and
- * the_ratings_vote() are public template tags besides, so a theme can print
- * either on its own. Setting the variable on the container alone left every
- * one of those reading the light default and glaring on a dark page.
- */
+/* The unrated grey glares on a dark page. All three selectors: .wp-postratings
+   comes only from the_ratings(), and a bare strip can be printed without it. */
 @media (prefers-color-scheme: dark) {
 	.wp-postratings,
 	.wp-postratings-strip,

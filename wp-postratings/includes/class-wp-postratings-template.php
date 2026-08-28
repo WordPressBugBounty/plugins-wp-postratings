@@ -5,9 +5,7 @@
  * @package WP-PostRatings
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
+defined( 'ABSPATH' ) || exit;
 
 /**
  * Builds the rating markup and expands the %TOKEN% templates.
@@ -33,6 +31,36 @@ class WP_PostRatings_Template {
 	const COLORS_STORED  = 'stored';
 	const COLORS_BUILTIN = 'builtin';
 	const COLORS_NONE    = 'none';
+
+	/**
+	 * Whether anything on this request has rendered rating markup.
+	 *
+	 * @var bool
+	 */
+	private static $needs_assets = false;
+
+	/**
+	 * Whether the front end stylesheet and script should be enqueued.
+	 *
+	 * @return bool
+	 */
+	public static function needs_assets() {
+		return self::$needs_assets;
+	}
+
+	/**
+	 * Ask for the front end assets on this request.
+	 *
+	 * Anything emitting rating markup must come through here. expand() covers
+	 * the template tags, the shortcode, the block, the widget and the stats
+	 * lists; the comment author strip asks on its own because it expands no
+	 * template, and its shapes are CSS masks from the same stylesheet.
+	 *
+	 * @return void
+	 */
+	public static function request_assets() {
+		self::$needs_assets = true;
+	}
 
 	/**
 	 * Echo markup this plugin built itself.
@@ -111,12 +139,36 @@ class WP_PostRatings_Template {
 	 * @return string
 	 */
 	private static function shape_style( $shape ) {
+		// No mask, so no custom property: emitting url() around an empty data
+		// URI is a parse error, and the browser drops the whole declaration.
+		if ( WP_PostRatings_Shapes::is_numeric_shape( $shape ) ) {
+			return '';
+		}
+
 		if ( WP_PostRatings_Shapes::is_updown( $shape ) ) {
 			return '--wp-postratings-shape-up:url(' . WP_PostRatings_Shapes::data_uri( $shape, 'up' ) . ');' .
 				'--wp-postratings-shape-down:url(' . WP_PostRatings_Shapes::data_uri( $shape, 'down' ) . ')';
 		}
 
 		return '--wp-postratings-shape:url(' . WP_PostRatings_Shapes::data_uri( $shape ) . ')';
+	}
+
+	/**
+	 * The classes a rating surface carries for its shape.
+	 *
+	 * A numeric scale is marked by type as well as by name, because the
+	 * stylesheet has to reach any numeric shape rather than only the one this
+	 * plugin ships: a site registering its own through wp_postratings_shapes
+	 * gets a name of its own, and rules keyed to that name would miss it.
+	 *
+	 * @param string $shape Shape name, already resolved.
+	 *
+	 * @return string
+	 */
+	private static function shape_classes( $shape ) {
+		$classes = 'wp-postratings-shape-' . $shape;
+
+		return WP_PostRatings_Shapes::is_numeric_shape( $shape ) ? $classes . ' wp-postratings-numeric' : $classes;
 	}
 
 	/**
@@ -143,16 +195,33 @@ class WP_PostRatings_Template {
 	/**
 	 * One row of shapes.
 	 *
-	 * @param int    $count Number of shapes.
-	 * @param string $extra Extra style for each item.
+	 * @param int    $count    Number of shapes.
+	 * @param string $extra    Extra style for each item.
+	 * @param bool   $numbered Whether each shape is drawn as its own position.
 	 *
 	 * @return string
 	 */
-	private static function row( $count, $extra = '' ) {
+	private static function row( $count, $extra = '', $numbered = false ) {
 		$style = '' !== $extra ? ' style="' . esc_attr( $extra ) . '"' : '';
-		$item  = '<i class="wp-postratings-item"' . $style . '></i>';
+		$count = max( 0, (int) $count );
 
-		return '<span class="wp-postratings-row">' . str_repeat( $item, max( 0, (int) $count ) ) . '</span>';
+		if ( ! $numbered ) {
+			$item = '<i class="wp-postratings-item"' . $style . '></i>';
+
+			return '<span class="wp-postratings-row">' . str_repeat( $item, $count ) . '</span>';
+		}
+
+		// The one row that is not a repeat. Every other shape is one mask
+		// repeated, so str_repeat() was the whole of it; a numeric scale draws
+		// a different glyph at every position, which is the reason it could not
+		// be registered as an ordinary shape in the first place.
+		$items = '';
+
+		for ( $i = 1; $i <= $count; $i++ ) {
+			$items .= '<i class="wp-postratings-item"' . $style . '>' . esc_html( number_format_i18n( $i ) ) . '</i>';
+		}
+
+		return '<span class="wp-postratings-row">' . $items . '</span>';
 	}
 
 	/**
@@ -399,13 +468,14 @@ class WP_PostRatings_Template {
 	 */
 	private static function strip( $shape, $steps, $style, $image_alt ) {
 		$item_style = '';
+		$numbered   = WP_PostRatings_Shapes::is_numeric_shape( $shape );
 
-		$html  = '<span class="wp-postratings-strip wp-postratings-shape-' . esc_attr( $shape ) . '"';
+		$html  = '<span class="wp-postratings-strip ' . esc_attr( self::shape_classes( $shape ) ) . '"';
 		$html .= ' style="' . esc_attr( $style ) . '"';
 		$html .= '' !== $image_alt ? ' role="img" aria-label="' . esc_attr( $image_alt ) . '"' : ' aria-hidden="true"';
 		$html .= '>';
-		$html .= '<span class="wp-postratings-track" aria-hidden="true">' . self::row( $steps, $item_style ) . '</span>';
-		$html .= '<span class="wp-postratings-fill" aria-hidden="true">' . self::row( $steps, $item_style ) . '</span>';
+		$html .= '<span class="wp-postratings-track" aria-hidden="true">' . self::row( $steps, $item_style, $numbered ) . '</span>';
+		$html .= '<span class="wp-postratings-fill" aria-hidden="true">' . self::row( $steps, $item_style, $numbered ) . '</span>';
 		$html .= '</span>';
 
 		return $html;
@@ -560,7 +630,7 @@ class WP_PostRatings_Template {
 		// element straight back out of it -- leaving the control outside its own
 		// container. role="radiogroup" with a label is equivalent for assistive
 		// technology and nests legally.
-		$html  = '<span class="wp-postratings-vote wp-postratings-scale wp-postratings-shape-' . esc_attr( $shape ) . '"';
+		$html  = '<span class="wp-postratings-vote wp-postratings-scale ' . esc_attr( self::shape_classes( $shape ) ) . '"';
 		$html .= ' style="' . esc_attr( $style ) . '" data-post-id="' . esc_attr( $post_id ) . '"';
 		$html .= ' role="radiogroup" aria-label="' . esc_attr__( 'Rate this post', 'wp-postratings' ) . '">';
 
@@ -585,7 +655,21 @@ class WP_PostRatings_Template {
 			$html .= '<label for="' . esc_attr( $id ) . '"';
 			$html .= '' !== $label_style ? ' style="' . esc_attr( $label_style ) . '"' : '';
 			$html .= '>';
-			$html .= '<i class="wp-postratings-item"></i><span>' . esc_html( $label ) . '</span>';
+
+			/*
+			 * The digit is hidden from assistive technology, and has to be.
+			 *
+			 * The label's own text is the radio's accessible name, and every
+			 * other shape contributes nothing to it because the glyph is an
+			 * empty element carrying a mask. A numeric glyph is real text, so
+			 * left exposed it is read as part of the name and every value on
+			 * the scale announces itself twice -- "3 3 Stars".
+			 */
+			$glyph = WP_PostRatings_Shapes::is_numeric_shape( $shape )
+				? '<i class="wp-postratings-item" aria-hidden="true">' . esc_html( number_format_i18n( $i ) ) . '</i>'
+				: '<i class="wp-postratings-item"></i>';
+
+			$html .= $glyph . '<span>' . esc_html( $label ) . '</span>';
 			$html .= '</label>';
 		}
 
@@ -663,6 +747,8 @@ class WP_PostRatings_Template {
 	 * @return string
 	 */
 	public static function ratings_images_comment_author( $ratings_custom, $ratings_max, $comment_author_rating, $shape, $image_alt ) {
+		self::request_assets();
+
 		$shape = self::resolve_shape( $shape );
 
 		// An up/down vote is one glyph, not a strip: the author voted one way
@@ -690,6 +776,8 @@ class WP_PostRatings_Template {
 	 * @return string
 	 */
 	public static function expand( $template, $post_data, $post_ratings_data = null, $max_post_title_chars = 0, $is_main_loop = true ) {
+		self::request_assets();
+
 		// Nothing here touches the global $post any more. It used to be
 		// reassigned so get_the_content() and friends would read the post the
 		// template named, and restored afterwards -- which worked, but meant
@@ -857,6 +945,7 @@ class WP_PostRatings_Template {
 				'%RATINGS_AVERAGE%',
 				'%RATINGS_PERCENTAGE%',
 				'%RATINGS_USERS%',
+				'%RATINGS_PERMISSION%',
 			),
 			array(
 				$post_ratings_alt_text,
@@ -866,6 +955,7 @@ class WP_PostRatings_Template {
 				number_format_i18n( $post_ratings_average, 2 ),
 				number_format_i18n( $post_ratings_percentage, 2 ),
 				number_format_i18n( $post_ratings_users ),
+				WP_PostRatings_Rating::permission_message(),
 			),
 			$value
 		);

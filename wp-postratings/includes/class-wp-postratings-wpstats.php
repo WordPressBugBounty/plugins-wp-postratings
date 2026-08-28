@@ -5,9 +5,7 @@
  * @package WP-PostRatings
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
+defined( 'ABSPATH' ) || exit;
 
 /**
  * Contributes this plugin's section to the WP-Stats page.
@@ -27,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class WP_PostRatings_WPStats {
 
 	/**
-	 * Offer the section to WP-Stats.
+	 * Hook registration.
 	 *
 	 * @return void
 	 */
